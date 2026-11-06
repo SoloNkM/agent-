@@ -15,7 +15,7 @@ def chemin_sur(chemin):
     return complet
 
 
-def lister_dossier(chemin="."):
+def lister_dossier(chemin: str = "."):
     """Liste le contenu d'un dossier (les dossiers finissent par /)."""
     dossier = chemin_sur(chemin)
     if not dossier.is_dir():
@@ -28,7 +28,7 @@ def lister_dossier(chemin="."):
     return "\n".join(lignes) if lignes else "(dossier vide)"
 
 
-def lire_fichier(chemin):
+def lire_fichier(chemin: str):
     """Lit un fichier texte (tronqué s'il est très long)."""
     fichier = chemin_sur(chemin)
     if not fichier.is_file():

@@ -3,6 +3,7 @@ import time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
+import outils
 
 load_dotenv()
 
@@ -15,6 +16,7 @@ MODELE = "gemini-3.5-flash-lite"
 
 CONFIG = types.GenerateContentConfig(
     thinking_config=types.ThinkingConfig(thinking_level="low"),
+    tools=[outils.lister_dossier, outils.lire_fichier],
 )
 
 
