@@ -1,8 +1,11 @@
+from google.genai import types
+
 from modele import demander
 
 
 def main():
     print("Agent prêt. Tape 'quit' pour arrêter.")
+    historique = []
     while True:
         message = input("\nToi : ").strip()
         if message.lower() in ("quit", "exit", "q"):
@@ -10,10 +13,17 @@ def main():
             break
         if not message:
             continue
+        historique.append(
+            types.Content(role="user", parts=[types.Part.from_text(text=message)])
+        )
         try:
-            reponse = demander(message)
+            reponse = demander(historique)
+            historique.append(
+                types.Content(role="model", parts=[types.Part.from_text(text=reponse)])
+            )
             print(f"\nAgent : {reponse}")
         except Exception as e:
+            historique.pop()
             print(f"\nErreur : {e}")
 
 
