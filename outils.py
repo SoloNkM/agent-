@@ -1,4 +1,5 @@
 import difflib
+import functools
 import os
 import re
 import subprocess
@@ -50,6 +51,58 @@ def chemin_ecriture(chemin):
     return complet
 
 
+ECHECS_DE_SUITE = 0
+MAX_ECHECS = 3
+
+
+def reinitialiser_echecs():
+    """Remet le compteur d'échecs à zéro (appelé à chaque nouveau message)."""
+    global ECHECS_DE_SUITE
+    ECHECS_DE_SUITE = 0
+
+
+def _est_un_echec(resultat):
+    if not isinstance(resultat, str):
+        return False
+    if resultat.startswith("Code de retour : "):
+        return not resultat.startswith("Code de retour : 0\n")
+    return resultat.startswith("Commande arrêtée")
+
+
+def _compter_echec():
+    global ECHECS_DE_SUITE
+    ECHECS_DE_SUITE += 1
+    if ECHECS_DE_SUITE == MAX_ECHECS:
+        print(f"\n[!] {MAX_ECHECS} échecs de suite : l'agent est bloqué jusqu'à ton prochain message.")
+
+
+def surveiller(fonction):
+    """Bloque l'outil après plusieurs échecs de suite."""
+    @functools.wraps(fonction)
+    def enveloppe(*args, **kwargs):
+        global ECHECS_DE_SUITE
+        if ECHECS_DE_SUITE >= MAX_ECHECS:
+            noter("blocage", fonction.__name__, "arret")
+            return (
+                f"ARRÊT : {MAX_ECHECS} échecs de suite. N'essaie plus aucun outil. "
+                "Explique à l'utilisateur ce qui a échoué et attends ses instructions."
+            )
+        try:
+            resultat = fonction(*args, **kwargs)
+        except Exception:
+            _compter_echec()
+            raise
+        if _est_un_echec(resultat):
+            _compter_echec()
+        elif isinstance(resultat, str) and "refusée par l'utilisateur" in resultat:
+            pass
+        else:
+            ECHECS_DE_SUITE = 0
+        return resultat
+    return enveloppe
+
+
+@surveiller
 def lister_dossier(chemin: str = "."):
     """Liste le contenu d'un dossier (les dossiers finissent par /)."""
     dossier = chemin_sur(chemin)
@@ -63,6 +116,7 @@ def lister_dossier(chemin: str = "."):
     return "\n".join(lignes) if lignes else "(dossier vide)"
 
 
+@surveiller
 def lire_fichier(chemin: str):
     """Lit un fichier texte (tronqué s'il est très long)."""
     fichier = chemin_sur(chemin)
@@ -111,6 +165,7 @@ def apercu_modification(ancien, nouveau):
     return "\n".join(diff)
 
 
+@surveiller
 def ecrire_fichier(chemin: str, contenu: str):
     """Crée ou remplace un fichier texte, après confirmation de l'utilisateur."""
     fichier = chemin_ecriture(chemin)
@@ -154,6 +209,7 @@ def verifier_commande(commande):
             raise ValueError(f"Commande refusée d'office (contient '{mot}').")
 
 
+@surveiller
 def lancer_commande(commande: str):
     """Lance une commande dans le dossier de travail, après confirmation."""
     commande = commande.strip()

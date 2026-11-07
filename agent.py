@@ -1,5 +1,6 @@
 from google.genai import types
 
+import outils
 from modele import demander
 
 
@@ -13,6 +14,7 @@ def main():
             break
         if not message:
             continue
+        outils.reinitialiser_echecs()
         historique.append(
             types.Content(role="user", parts=[types.Part.from_text(text=message)])
         )
