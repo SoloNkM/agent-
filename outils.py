@@ -7,7 +7,7 @@ from pathlib import Path
 
 DOSSIER_TRAVAIL = Path.cwd().resolve()
 DOSSIERS_IGNORES = {"venv", ".git", "__pycache__", "node_modules", ".sauvegardes"}
-FICHIERS_PROTEGES = {"agent.py", "modele.py", "outils.py", ".gitignore"}
+FICHIERS_PROTEGES = {"agent.py", "modele.py", "outils.py", ".gitignore", "journal.log"}
 LIMITE_CARACTERES = 20000
 LIMITE_ECRITURE = 100000
 DOSSIER_SAUVEGARDES = DOSSIER_TRAVAIL / ".sauvegardes"
@@ -74,6 +74,20 @@ def lire_fichier(chemin: str):
     return texte
 
 
+FICHIER_JOURNAL = DOSSIER_TRAVAIL / "journal.log"
+
+
+def noter(action, cible, decision):
+    """Ajoute une ligne au journal : date | action | cible | décision."""
+    cible = " ".join(str(cible).split())
+    ligne = f"{datetime.now():%Y-%m-%d %H:%M:%S} | {action} | {cible} | {decision}\n"
+    try:
+        with open(FICHIER_JOURNAL, "a", encoding="utf-8") as f:
+            f.write(ligne)
+    except OSError:
+        pass
+
+
 def confirmer(question):
     """Pose une question à l'utilisateur ; tout ce qui n'est pas un oui clair = non."""
     reponse = input(f"\n{question} (go / non) : ").strip().lower()
@@ -110,7 +124,9 @@ def ecrire_fichier(chemin: str, contenu: str):
     print(apercu_modification(ancien, contenu))
 
     if not confirmer("Alors, on y va ?"):
+        noter("ecriture", chemin, "non")
         return "Écriture refusée par l'utilisateur : rien n'a été modifié."
+    noter("ecriture", chemin, "go")
 
     nom_copie = None
     if existe:
@@ -149,7 +165,9 @@ def lancer_commande(commande: str):
     print(f"Lancer la commande : {commande}")
     print(f"Dans le dossier : {DOSSIER_TRAVAIL}")
     if not confirmer("Alors, on y va ?"):
+        noter("commande", commande, "non")
         return "Commande refusée par l'utilisateur : rien n'a été lancé."
+    noter("commande", commande, "go")
 
     # On retire les variables secrètes pour que la commande ne puisse pas les lire.
     secrets = ("KEY", "TOKEN", "SECRET", "PASSWORD")
