@@ -142,8 +142,13 @@ def noter(action, cible, decision):
         pass
 
 
+CONFIRMATEUR = None
+
+
 def confirmer(question):
     """Pose une question à l'utilisateur ; tout ce qui n'est pas un oui clair = non."""
+    if CONFIRMATEUR is not None:
+        return CONFIRMATEUR(question)
     reponse = input(f"\n{question} (go / non) : ").strip().lower()
     return reponse in ("go", "ok", "oui", "o", "ouais", "yes", "vas-y")
 
