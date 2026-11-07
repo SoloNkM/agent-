@@ -1,4 +1,7 @@
 import difflib
+import os
+import re
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -8,6 +11,18 @@ FICHIERS_PROTEGES = {"agent.py", "modele.py", "outils.py", ".gitignore"}
 LIMITE_CARACTERES = 20000
 LIMITE_ECRITURE = 100000
 DOSSIER_SAUVEGARDES = DOSSIER_TRAVAIL / ".sauvegardes"
+DELAI_COMMANDE = 30
+LIMITE_SORTIE = 5000
+
+# Commandes refusées d'office, même si l'utilisateur dit "go".
+MOTS_INTERDITS = [
+    "del", "erase", "rmdir", "rd", "rm", "format", "shutdown", "diskpart",
+    "taskkill", "reg", "powershell", "pwsh", "curl", "wget", "move", "ren",
+    "rename", "copy", "xcopy", "robocopy",
+]
+FRAGMENTS_INTERDITS = [
+    ".env", "api_key", "gemini", "git reset", "git clean", "--force", ">",
+]
 
 
 def chemin_sur(chemin):
@@ -110,3 +125,66 @@ def ecrire_fichier(chemin: str, contenu: str):
     if nom_copie:
         return f"Fichier '{chemin}' écrit. Original sauvegardé dans .sauvegardes/{nom_copie}."
     return f"Fichier '{chemin}' créé."
+
+
+def verifier_commande(commande):
+    """Refuse d'office les commandes dangereuses (filet de sécurité)."""
+    basse = commande.lower()
+    for fragment in FRAGMENTS_INTERDITS:
+        if fragment in basse:
+            raise ValueError(f"Commande refusée d'office (contient '{fragment}').")
+    for mot in MOTS_INTERDITS:
+        if re.search(rf"(?<![\w-]){re.escape(mot)}(?![\w-])", basse):
+            raise ValueError(f"Commande refusée d'office (contient '{mot}').")
+
+
+def lancer_commande(commande: str):
+    """Lance une commande dans le dossier de travail, après confirmation."""
+    commande = commande.strip()
+    if not commande:
+        raise ValueError("Commande vide.")
+    verifier_commande(commande)
+
+    print("\n--- Demande de l'agent ---")
+    print(f"Lancer la commande : {commande}")
+    print(f"Dans le dossier : {DOSSIER_TRAVAIL}")
+    if not confirmer("Alors, on y va ?"):
+        return "Commande refusée par l'utilisateur : rien n'a été lancé."
+
+    # On retire les variables secrètes pour que la commande ne puisse pas les lire.
+    secrets = ("KEY", "TOKEN", "SECRET", "PASSWORD")
+    environnement = {
+        nom: valeur
+        for nom, valeur in os.environ.items()
+        if not any(s in nom.upper() for s in secrets)
+    }
+
+    processus = subprocess.Popen(
+        commande,
+        shell=True,
+        cwd=DOSSIER_TRAVAIL,
+        env=environnement,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+    )
+    try:
+        sortie, _ = processus.communicate(timeout=DELAI_COMMANDE)
+    except subprocess.TimeoutExpired:
+        # On tue tout l'arbre de processus (cmd + ce qu'il a lancé).
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(processus.pid)],
+            capture_output=True,
+        )
+        try:
+            processus.communicate(timeout=5)
+        except Exception:
+            pass
+        return f"Commande arrêtée : elle dépassait {DELAI_COMMANDE} secondes."
+
+    sortie = sortie or ""
+    if len(sortie) > LIMITE_SORTIE:
+        sortie = sortie[:LIMITE_SORTIE] + "\n[... sortie tronquée ...]"
+    return f"Code de retour : {processus.returncode}\n{sortie.strip() or '(aucune sortie)'}"

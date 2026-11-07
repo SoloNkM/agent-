@@ -16,7 +16,7 @@ MODELE = "gemini-3.5-flash-lite"
 
 CONFIG = types.GenerateContentConfig(
     thinking_config=types.ThinkingConfig(thinking_level="low"),
-    tools=[outils.lister_dossier, outils.lire_fichier, outils.ecrire_fichier],
+        tools=[outils.lister_dossier, outils.lire_fichier, outils.ecrire_fichier, outils.lancer_commande],
 )
 
 
