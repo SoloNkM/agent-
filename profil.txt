@@ -1,0 +1,6 @@
+Projet : agent IA personnel en Python (dossier D:\mon_agent), piloté aussi par Telegram.
+Stack : Python 3.13, google-genai, python-dotenv, python-telegram-bot.
+Lancer l'agent : python agent.py. Lancer le bot : python bot_telegram.py.
+Tests : pas de suite de tests automatique, on teste à la main.
+Fichiers que l'agent ne modifie pas : agent.py, modele.py, outils.py, .gitignore, journal.log.
+Style du code : commentaires simples, en français.
