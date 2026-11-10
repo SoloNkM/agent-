@@ -6,3 +6,4 @@ journal.log
 *.session
 *.session-journal
 contacts.json
+memoire.db

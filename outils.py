@@ -6,9 +6,11 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+import memoire
+
 DOSSIER_TRAVAIL = Path.cwd().resolve()
 DOSSIERS_IGNORES = {"venv", ".git", "__pycache__", "node_modules", ".sauvegardes"}
-FICHIERS_PROTEGES = {"agent.py", "modele.py", "outils.py", ".gitignore", "journal.log", "bot_telegram.py", "id_telegram.py", "profil.txt"}
+FICHIERS_PROTEGES = {"agent.py", "modele.py", "outils.py", ".gitignore", "journal.log", "bot_telegram.py", "id_telegram.py", "profil.txt", "memoire.py", "memoire.db"}
 LIMITE_CARACTERES = 20000
 LIMITE_ECRITURE = 100000
 DOSSIER_SAUVEGARDES = DOSSIER_TRAVAIL / ".sauvegardes"
@@ -267,3 +269,52 @@ def lancer_commande(commande: str):
     if len(sortie) > LIMITE_SORTIE:
         sortie = sortie[:LIMITE_SORTIE] + "\n[... sortie tronquée ...]"
     return f"Code de retour : {processus.returncode}\n{sortie.strip() or '(aucune sortie)'}"
+
+
+MOTS_SECRETS = ("api_key", "apikey", "token", "password", "mot de passe", "secret", ".env", "clé", "cle api")
+
+
+@surveiller
+def se_souvenir(texte: str):
+    """Retient une note durable (préférence, fait utile) après l'accord de l'utilisateur."""
+    texte = " ".join(str(texte).split())
+    if not texte:
+        raise ValueError("Note vide.")
+    if len(texte) > 300:
+        raise ValueError("Note trop longue (300 caractères maximum).")
+    if any(m in texte.lower() for m in MOTS_SECRETS):
+        raise ValueError("Je ne retiens jamais de secret (clé, mot de passe, token).")
+    print("\n--- Demande de l'agent ---")
+    print(f"Retenir cette note : {texte}")
+    if not confirmer("Alors, on y va ?"):
+        noter("memoire", texte, "non")
+        return "Note refusée par l'utilisateur : rien n'a été enregistré."
+    noter("memoire", texte, "go")
+    numero = memoire.ajouter(texte)
+    return f"Note enregistrée (numéro {numero})."
+
+
+@surveiller
+def lister_notes():
+    """Liste les notes retenues, avec leur numéro."""
+    notes = memoire.lister()
+    if not notes:
+        return "Aucune note enregistrée."
+    return "\n".join(f"{n}. {t} ({d})" for n, t, d in notes)
+
+
+@surveiller
+def oublier_note(numero: int):
+    """Supprime une note par son numéro, après l'accord de l'utilisateur."""
+    numero = int(numero)
+    existantes = {n: t for n, t, d in memoire.lister()}
+    if numero not in existantes:
+        raise ValueError(f"Aucune note numéro {numero}.")
+    print("\n--- Demande de l'agent ---")
+    print(f"Oublier la note {numero} : {existantes[numero]}")
+    if not confirmer("Alors, on y va ?"):
+        noter("memoire", f"oublier {numero}", "non")
+        return "Suppression refusée par l'utilisateur : rien n'a été supprimé."
+    noter("memoire", f"oublier {numero}", "go")
+    memoire.supprimer(numero)
+    return f"Note {numero} supprimée."
