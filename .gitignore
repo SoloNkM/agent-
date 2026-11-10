@@ -3,3 +3,6 @@ venv/
 __pycache__/
 .sauvegardes/
 journal.log
+*.session
+*.session-journal
+contacts.json
