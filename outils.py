@@ -13,7 +13,7 @@ import memoire
 
 DOSSIER_TRAVAIL = Path.cwd().resolve()
 DOSSIERS_IGNORES = {"venv", ".git", "__pycache__", "node_modules", ".sauvegardes"}
-FICHIERS_PROTEGES = {"agent.py", "modele.py", "outils.py", ".gitignore", "journal.log", "bot_telegram.py", "id_telegram.py", "profil.txt", "memoire.py", "memoire.db", "envoi_telethon.py", "ajouter_contact.py", "connexion_telethon.py"}
+FICHIERS_PROTEGES = {"agent.py", "modele.py", "outils.py", ".gitignore", "journal.log", "bot_telegram.py", "id_telegram.py", "profil.txt", "memoire.py", "memoire.db", "envoi_telethon.py", "ajouter_contact.py", "connexion_telethon.py", "suppression_telethon.py"}
 LIMITE_CARACTERES = 20000
 LIMITE_ECRITURE = 100000
 DOSSIER_SAUVEGARDES = DOSSIER_TRAVAIL / ".sauvegardes"
@@ -27,7 +27,7 @@ MOTS_INTERDITS = [
     "rename", "copy", "xcopy", "robocopy",
 ]
 FRAGMENTS_INTERDITS = [
-    ".env", "api_key", "api_hash", "api_id", ".session", "contacts.json", "memoire.db", "envoi_telethon", "ajouter_contact", "connexion_telethon", "gemini", "git reset", "git clean", "--force", ">",
+    ".env", "api_key", "api_hash", "api_id", ".session", "contacts.json", "memoire.db", "envoi_telethon", "ajouter_contact", "connexion_telethon", "suppression_telethon", "envois.json", "gemini", "git reset", "git clean", "--force", ">",
 ]
 
 
@@ -39,7 +39,7 @@ def chemin_sur(chemin):
     if complet.name.lower().startswith(".env"):
         raise ValueError("Accès refusé : ce fichier est protégé (secrets).")
     nom = complet.name.lower()
-    if nom.endswith((".session", ".session-journal")) or nom in ("contacts.json", "memoire.db"):
+    if nom.endswith((".session", ".session-journal")) or nom in ("contacts.json", "memoire.db", "envois.json"):
         raise ValueError("Accès refusé : ce fichier est privé.")
     return complet
 
@@ -424,3 +424,61 @@ def envoyer_message(destinataires: list[str], texte: str):
     if ko:
         texte_retour += " Échec pour : " + ", ".join(ko) + "."
     return texte_retour
+
+
+ENVOIS_FICHIER = DOSSIER_TRAVAIL / "envois.json"
+
+
+def _charger_envois():
+    try:
+        return json.loads(ENVOIS_FICHIER.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+@surveiller
+def lister_envois():
+    """Liste les derniers messages envoyés par l'agent et encore supprimables, avec leur numéro."""
+    envois = [e for e in _charger_envois() if not e.get("supprime")][-10:]
+    if not envois:
+        return "Aucun message envoyé par l'agent n'est enregistré."
+    return "\n".join(f"{e['n']}. {e['date']} à {e['alias']} : {e['apercu'][:80]}" for e in envois)
+
+
+@surveiller
+def supprimer_message(numero: int):
+    """Supprime pour tous un message envoyé par l'agent (voir lister_envois), après l'accord de l'utilisateur."""
+    numero = int(numero)
+    entree = next((e for e in _charger_envois() if e.get("n") == numero and not e.get("supprime")), None)
+    if entree is None:
+        raise ValueError(f"Aucun envoi supprimable avec le numéro {numero}.")
+    contact = _charger_contacts().get(entree["alias"], {})
+    cible = "GROUPE « " + contact.get("nom", "?") + " »" if contact.get("type") == "groupe" else contact.get("nom", "?")
+    print("\n--- Demande de l'agent ---")
+    print(f"Supprimer pour tout le monde le message envoyé à {entree['alias']} ({cible})")
+    print(f"Envoyé le : {entree['date']}")
+    print(f"Texte : {entree['apercu']}")
+    print("ATTENTION : c'est irréversible.")
+    if not confirmer("Alors, on y va ?"):
+        noter("suppression", entree["alias"], "non")
+        return "Suppression refusée par l'utilisateur : rien n'a été supprimé."
+    noter("suppression", entree["alias"], "go")
+    charge = json.dumps({"numero": numero}, ensure_ascii=True)
+    try:
+        r = subprocess.run(
+            [sys.executable, str(DOSSIER_TRAVAIL / "suppression_telethon.py")],
+            input=charge.encode("utf-8"),
+            capture_output=True,
+            cwd=DOSSIER_TRAVAIL,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Suppression arrêtée : trop long.")
+    lignes = r.stdout.decode("utf-8", errors="replace").strip().splitlines()
+    try:
+        data = json.loads(lignes[-1])
+    except (IndexError, ValueError):
+        raise RuntimeError("Réponse inattendue du script de suppression.")
+    if "erreur" in data:
+        raise RuntimeError(str(data["erreur"]))
+    return f"Message {numero} supprimé chez {entree['alias']}."

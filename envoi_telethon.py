@@ -16,6 +16,27 @@ def fin(message):
     sys.exit(1)
 
 
+def enregistrer(nom, msg_id, texte):
+    try:
+        fichier = DOSSIER / "envois.json"
+        try:
+            liste = json.loads(fichier.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            liste = []
+        numero = max([e.get("n", 0) for e in liste], default=0) + 1
+        liste.append({
+            "n": numero,
+            "alias": nom,
+            "msg_id": msg_id,
+            "date": time.strftime("%Y-%m-%d %H:%M"),
+            "apercu": " ".join(texte.split())[:200],
+            "supprime": False,
+        })
+        fichier.write_text(json.dumps(liste[-200:], ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def main():
     try:
         donnees = json.loads(sys.stdin.buffer.read().decode("utf-8"))
@@ -40,7 +61,8 @@ def main():
         resultats = {}
         for i, nom in enumerate(noms):
             try:
-                client.send_message(int(contacts[nom]["id"]), texte)
+                m = client.send_message(int(contacts[nom]["id"]), texte)
+                enregistrer(nom, m.id, texte)
                 resultats[nom] = "ok"
             except Exception as e:
                 resultats[nom] = "erreur : " + type(e).__name__

@@ -7,3 +7,4 @@ journal.log
 *.session-journal
 contacts.json
 memoire.db
+envois.json
