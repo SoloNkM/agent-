@@ -24,7 +24,7 @@ MOTS_INTERDITS = [
     "rename", "copy", "xcopy", "robocopy",
 ]
 FRAGMENTS_INTERDITS = [
-    ".env", "api_key", "gemini", "git reset", "git clean", "--force", ">",
+    ".env", "api_key", "api_hash", "api_id", ".session", "contacts.json", "memoire.db", "gemini", "git reset", "git clean", "--force", ">",
 ]
 
 
@@ -35,6 +35,9 @@ def chemin_sur(chemin):
         raise ValueError("Accès refusé : ce chemin est en dehors du dossier de travail.")
     if complet.name.lower().startswith(".env"):
         raise ValueError("Accès refusé : ce fichier est protégé (secrets).")
+    nom = complet.name.lower()
+    if nom.endswith((".session", ".session-journal")) or nom in ("contacts.json", "memoire.db"):
+        raise ValueError("Accès refusé : ce fichier est privé.")
     return complet
 
 
@@ -233,7 +236,7 @@ def lancer_commande(commande: str):
     noter("commande", commande, "go")
 
     # On retire les variables secrètes pour que la commande ne puisse pas les lire.
-    secrets = ("KEY", "TOKEN", "SECRET", "PASSWORD")
+    secrets = ("KEY", "TOKEN", "SECRET", "PASSWORD", "HASH", "API_ID", "SESSION")
     environnement = {
         nom: valeur
         for nom, valeur in os.environ.items()
@@ -271,7 +274,7 @@ def lancer_commande(commande: str):
     return f"Code de retour : {processus.returncode}\n{sortie.strip() or '(aucune sortie)'}"
 
 
-MOTS_SECRETS = ("api_key", "apikey", "token", "password", "mot de passe", "secret", ".env", "clé", "cle api")
+MOTS_SECRETS = ("api_hash", "api_id", "session", "api_key", "apikey", "token", "password", "mot de passe", "secret", ".env", "clé", "cle api")
 
 
 @surveiller
