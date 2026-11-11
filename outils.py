@@ -364,6 +364,11 @@ def envoyer_message(destinataires: list[str], texte: str):
             "Contact inconnu : " + ", ".join(inconnus)
             + ". Contacts disponibles : " + (", ".join(sorted(contacts)) or "aucun") + "."
         )
+    nb_groupes = sum(1 for n in noms if contacts[n].get("type") == "groupe")
+    if 0 < nb_groupes < len(noms):
+        raise ValueError("Ne mélange pas un groupe et des personnes : fais deux envois séparés.")
+    if nb_groupes > 3:
+        raise ValueError("3 groupes maximum par envoi.")
     texte = str(texte).strip()
     if not texte:
         raise ValueError("Message vide.")
@@ -379,7 +384,12 @@ def envoyer_message(destinataires: list[str], texte: str):
     print("\n--- Demande de l'agent ---")
     print("Envoyer ce message depuis ton compte Telegram à :")
     for n in noms:
-        print(f"  - {n} ({contacts[n].get('nom', '?')})")
+        c = contacts[n]
+        if c.get("type") == "groupe":
+            m = c.get("membres")
+            print(f"  - {n} : GROUPE « {c.get('nom', '?')} »" + (f", {m} membres" if m else ""))
+        else:
+            print(f"  - {n} ({c.get('nom', '?')})")
     print("Message :")
     print(texte)
     if not confirmer("Alors, on y va ?"):
