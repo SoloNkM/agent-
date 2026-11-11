@@ -1,8 +1,11 @@
 import difflib
 import functools
+import json
 import os
 import re
 import subprocess
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -10,7 +13,7 @@ import memoire
 
 DOSSIER_TRAVAIL = Path.cwd().resolve()
 DOSSIERS_IGNORES = {"venv", ".git", "__pycache__", "node_modules", ".sauvegardes"}
-FICHIERS_PROTEGES = {"agent.py", "modele.py", "outils.py", ".gitignore", "journal.log", "bot_telegram.py", "id_telegram.py", "profil.txt", "memoire.py", "memoire.db"}
+FICHIERS_PROTEGES = {"agent.py", "modele.py", "outils.py", ".gitignore", "journal.log", "bot_telegram.py", "id_telegram.py", "profil.txt", "memoire.py", "memoire.db", "envoi_telethon.py", "ajouter_contact.py", "connexion_telethon.py"}
 LIMITE_CARACTERES = 20000
 LIMITE_ECRITURE = 100000
 DOSSIER_SAUVEGARDES = DOSSIER_TRAVAIL / ".sauvegardes"
@@ -24,7 +27,7 @@ MOTS_INTERDITS = [
     "rename", "copy", "xcopy", "robocopy",
 ]
 FRAGMENTS_INTERDITS = [
-    ".env", "api_key", "api_hash", "api_id", ".session", "contacts.json", "memoire.db", "gemini", "git reset", "git clean", "--force", ">",
+    ".env", "api_key", "api_hash", "api_id", ".session", "contacts.json", "memoire.db", "envoi_telethon", "ajouter_contact", "connexion_telethon", "gemini", "git reset", "git clean", "--force", ">",
 ]
 
 
@@ -321,3 +324,93 @@ def oublier_note(numero: int):
     noter("memoire", f"oublier {numero}", "go")
     memoire.supprimer(numero)
     return f"Note {numero} supprimée."
+
+
+CONTACTS_FICHIER = DOSSIER_TRAVAIL / "contacts.json"
+MAX_DESTINATAIRES = 5
+MAX_MESSAGES_PAR_HEURE = 10
+LIMITE_MESSAGE = 1000
+ENVOIS_RECENTS = []
+
+
+def _charger_contacts():
+    try:
+        return json.loads(CONTACTS_FICHIER.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _valeurs_secretes():
+    mots = ("KEY", "TOKEN", "SECRET", "PASSWORD", "HASH", "API_ID", "SESSION")
+    return [v for n, v in os.environ.items() if any(m in n.upper() for m in mots) and len(v) >= 6]
+
+
+@surveiller
+def envoyer_message(destinataires: list[str], texte: str):
+    """Envoie un message Telegram depuis le compte de Marc à des contacts de son carnet, après son accord."""
+    if isinstance(destinataires, str):
+        destinataires = [destinataires]
+    noms = []
+    for d in destinataires:
+        d = str(d).strip().lower()
+        if d and d not in noms:
+            noms.append(d)
+    if not 1 <= len(noms) <= MAX_DESTINATAIRES:
+        raise ValueError(f"Il faut entre 1 et {MAX_DESTINATAIRES} destinataires.")
+    contacts = _charger_contacts()
+    inconnus = [n for n in noms if n not in contacts]
+    if inconnus:
+        raise ValueError(
+            "Contact inconnu : " + ", ".join(inconnus)
+            + ". Contacts disponibles : " + (", ".join(sorted(contacts)) or "aucun") + "."
+        )
+    texte = str(texte).strip()
+    if not texte:
+        raise ValueError("Message vide.")
+    if len(texte) > LIMITE_MESSAGE:
+        raise ValueError(f"Message trop long ({LIMITE_MESSAGE} caractères maximum).")
+    if ".env" in texte.lower() or any(v in texte for v in _valeurs_secretes()):
+        raise ValueError("Je n'envoie jamais de secret (clé, token, mot de passe).")
+    maintenant = time.time()
+    ENVOIS_RECENTS[:] = [t for t in ENVOIS_RECENTS if maintenant - t < 3600]
+    if len(ENVOIS_RECENTS) + len(noms) > MAX_MESSAGES_PAR_HEURE:
+        raise ValueError(f"Limite atteinte : {MAX_MESSAGES_PAR_HEURE} messages par heure.")
+
+    print("\n--- Demande de l'agent ---")
+    print("Envoyer ce message depuis ton compte Telegram à :")
+    for n in noms:
+        print(f"  - {n} ({contacts[n].get('nom', '?')})")
+    print("Message :")
+    print(texte)
+    if not confirmer("Alors, on y va ?"):
+        noter("message", ", ".join(noms), "non")
+        return "Demande d'envoi refusée par l'utilisateur : rien n'a été envoyé."
+    noter("message", ", ".join(noms), "go")
+
+    charge = json.dumps({"destinataires": noms, "texte": texte}, ensure_ascii=True)
+    try:
+        r = subprocess.run(
+            [sys.executable, str(DOSSIER_TRAVAIL / "envoi_telethon.py")],
+            input=charge.encode("utf-8"),
+            capture_output=True,
+            cwd=DOSSIER_TRAVAIL,
+            timeout=90,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Envoi arrêté : trop long.")
+    lignes = r.stdout.decode("utf-8", errors="replace").strip().splitlines()
+    try:
+        data = json.loads(lignes[-1])
+    except (IndexError, ValueError):
+        raise RuntimeError("Réponse inattendue du script d'envoi.")
+    if "erreur" in data:
+        raise RuntimeError(str(data["erreur"]))
+    ok = [n for n, v in data.items() if v == "ok"]
+    ko = [f"{n} ({v})" for n, v in data.items() if v != "ok"]
+    ENVOIS_RECENTS.extend([time.time()] * len(ok))
+    if not ok:
+        raise RuntimeError("Aucun message envoyé : " + ", ".join(ko))
+    texte_retour = "Message envoyé à : " + ", ".join(ok) + "."
+    if ko:
+        texte_retour += " Échec pour : " + ", ".join(ko) + "."
+    return texte_retour

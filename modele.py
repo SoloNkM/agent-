@@ -45,7 +45,7 @@ INSTRUCTIONS = REGLES + ("\n\nProfil du projet :\n" + PROFIL if PROFIL else "")
 CONFIG = types.GenerateContentConfig(
     system_instruction=INSTRUCTIONS,
     thinking_config=types.ThinkingConfig(thinking_level="low"),
-        tools=[outils.lister_dossier, outils.lire_fichier, outils.ecrire_fichier, outils.lancer_commande, outils.se_souvenir, outils.lister_notes, outils.oublier_note],
+        tools=[outils.lister_dossier, outils.lire_fichier, outils.ecrire_fichier, outils.lancer_commande, outils.se_souvenir, outils.lister_notes, outils.oublier_note, outils.envoyer_message],
 )
 
 
