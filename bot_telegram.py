@@ -23,7 +23,7 @@ if not TOKEN or not MON_ID:
     sys.exit(1)
 
 import outils
-from modele import demander
+from modele import demander, transcrire
 
 DELAI_REPONSE = 120
 historique = []
@@ -135,6 +135,35 @@ async def message(update, context):
         await update.message.reply_text(reponse[i:i + 4000])
 
 
+DUREE_MAX_VOCAL = 120
+
+
+async def vocal(update, context):
+    v = update.message.voice
+    if v.duration and v.duration > DUREE_MAX_VOCAL:
+        await update.message.reply_text(f"Vocal trop long (maximum {DUREE_MAX_VOCAL} secondes).")
+        return
+    if occupe.locked():
+        await update.message.reply_text("Je suis encore sur ta demande d'avant. Patiente un instant.")
+        return
+    async with occupe:
+        try:
+            fichier = await context.bot.get_file(v.file_id)
+            octets = bytes(await fichier.download_as_bytearray())
+            texte = await asyncio.to_thread(transcrire, octets, v.mime_type or "audio/ogg")
+        except Exception as e:
+            await update.message.reply_text(f"Je n'ai pas pu comprendre le vocal : {type(e).__name__}")
+            return
+        if not texte:
+            await update.message.reply_text("Je n'ai rien compris dans ce vocal. Réessaie ou écris-moi.")
+            return
+        texte = texte[:1500]
+        await update.message.reply_text("🎙️ J'ai compris : " + texte)
+        reponse = await asyncio.to_thread(travail, texte)
+    for i in range(0, len(reponse), 4000):
+        await update.message.reply_text(reponse[i:i + 4000])
+
+
 async def bouton(update, context):
     q = update.callback_query
     if q.from_user.id != MON_ID:
@@ -176,6 +205,7 @@ def main():
     application.add_handler(
         MessageHandler(seulement_moi & filters.TEXT & ~filters.COMMAND, message)
     )
+    application.add_handler(MessageHandler(seulement_moi & filters.VOICE, vocal))
     application.add_handler(CallbackQueryHandler(bouton))
     outils.CONFIRMATEUR = confirmer_telegram
     application.run_polling()
